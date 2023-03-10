@@ -24,7 +24,7 @@
 #define MEMORY_WARNING_REPORT (1024 * 1024 * 32)
 
 struct snlua {
-	lua_State * L;
+	lua_State * L; // lua 虚拟机
 	struct skynet_context * ctx;
 	size_t mem;
 	size_t mem_report;

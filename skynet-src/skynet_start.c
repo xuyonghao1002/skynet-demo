@@ -18,19 +18,23 @@
 #include <string.h>
 #include <signal.h>
 
+// 监视
+// 全局唯一的实例
 struct monitor {
-	int count;
-	struct skynet_monitor ** m;
+	int count;  // 工作线程的数量
+	struct skynet_monitor ** m;  // struct skynet_monitor * 的数组，数组大小为工作线程的数量
 	pthread_cond_t cond;
 	pthread_mutex_t mutex;
-	int sleep;
+	int sleep;  // 休眠的工作线程数量
 	int quit;
 };
 
+
+// 工作线程的参数
 struct worker_parm {
-	struct monitor *m;
-	int id;
-	int weight;
+	struct monitor *m;  // 指向全局唯一监视结构体的指针
+	int id;  // 工作线程的id
+	int weight;  // 工作线程的权重
 };
 
 static volatile int SIG = 0;
@@ -91,7 +95,7 @@ free_monitor(struct monitor *m) {
 }
 
 static void *
-thread_monitor(void *p) {
+thread_monitor(void *p) {  // 检查过载服务
 	struct monitor * m = p;
 	int i;
 	int n = m->count;
@@ -162,6 +166,7 @@ thread_worker(void *p) {
 	while (!m->quit) {
 		q = skynet_context_message_dispatch(sm, q, weight);
 		if (q == NULL) {
+			// 全局消息队列中没有消息时，工作线程休眠
 			if (pthread_mutex_lock(&m->mutex) == 0) {
 				++ m->sleep;
 				// "spurious wakeup" is harmless,

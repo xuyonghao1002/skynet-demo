@@ -40,16 +40,16 @@
 #endif
 
 struct skynet_context {
-	void * instance;
-	struct skynet_module * mod;
-	void * cb_ud;
-	skynet_cb cb;
-	struct message_queue *queue;
+	void * instance;				// *隔离的环境
+	struct skynet_module * mod;		// 模块
+	void * cb_ud;					// 回调携带的环境
+	skynet_cb cb;					// *回调函数
+	struct message_queue *queue;	// *消息队列
 	ATOM_POINTER logfile;
 	uint64_t cpu_cost;	// in microsec
 	uint64_t cpu_start;	// in microsec
 	char result[32];
-	uint32_t handle;
+	uint32_t handle;				// actor句柄
 	int session_id;
 	ATOM_INT ref;
 	int message_count;
@@ -304,7 +304,7 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 
 	uint32_t handle = skynet_mq_handle(q);
 
-	struct skynet_context * ctx = skynet_handle_grab(handle);
+	struct skynet_context * ctx = skynet_handle_grab(handle);  // 查找服务
 	if (ctx == NULL) {
 		struct drop_t d = { handle };
 		skynet_mq_release(q, drop_message, &d);
@@ -313,13 +313,15 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 
 	int i,n=1;
 	struct skynet_message msg;
-
+	// weight < 0时，只取出一个消息进行处理
+	// weight == 0时，取出全部消息处理
+	// weight > 0时，取出 n>>=weight 的消息
 	for (i=0;i<n;i++) {
 		if (skynet_mq_pop(q,&msg)) {
 			skynet_context_release(ctx);
 			return skynet_globalmq_pop();
 		} else if (i==0 && weight >= 0) {
-			n = skynet_mq_length(q);
+			n = skynet_mq_length(q);  // 此时q是某个具体服务的消息队列
 			n >>= weight;
 		}
 		int overload = skynet_mq_overload(q);

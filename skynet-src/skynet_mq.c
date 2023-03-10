@@ -18,9 +18,9 @@
 #define MQ_IN_GLOBAL 1
 #define MQ_OVERLOAD 1024
 
-struct message_queue {
+struct message_queue {  // 服务的消息队列
 	struct spinlock lock;
-	uint32_t handle;
+	uint32_t handle;  // 通过handle查找具体的服务
 	int cap;
 	int head;
 	int tail;
@@ -32,7 +32,7 @@ struct message_queue {
 	struct message_queue *next;
 };
 
-struct global_queue {
+struct global_queue {  // 全局消息队列
 	struct message_queue *head;
 	struct message_queue *tail;
 	struct spinlock lock;

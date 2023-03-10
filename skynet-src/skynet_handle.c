@@ -136,7 +136,7 @@ skynet_handle_retireall() {
 }
 
 struct skynet_context * 
-skynet_handle_grab(uint32_t handle) {
+skynet_handle_grab(uint32_t handle) {  // 通过handle查找服务的上下文
 	struct handle_storage *s = H;
 	struct skynet_context * result = NULL;
 
