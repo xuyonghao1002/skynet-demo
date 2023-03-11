@@ -87,14 +87,14 @@ struct socket_stat {
 };
 
 struct socket {
-	uintptr_t opaque;
+	uintptr_t opaque;				// actor地址
 	struct wb_list high;
 	struct wb_list low;
 	int64_t wb_size;
 	struct socket_stat stat;
 	ATOM_ULONG sending;
-	int fd;
-	int id;
+	int fd;							// socket文件描述符
+	int id;							// slot列表索引
 	ATOM_INT type;
 	uint8_t protocol;
 	bool reading;
@@ -114,17 +114,17 @@ struct socket {
 
 struct socket_server {
 	volatile uint64_t time;
-	int reserve_fd;	// for EMFILE
-	int recvctrl_fd;
-	int sendctrl_fd;
-	int checkctrl;
-	poll_fd event_fd;
+	int reserve_fd;							// for EMFILE
+	int recvctrl_fd;						// 接收管道文件描述符
+	int sendctrl_fd;						// 发送管道文件描述符
+	int checkctrl;							// 其他线程是否通过管道向 socket 线程发送消息
+	poll_fd event_fd;						// epoll 实例id
 	ATOM_INT alloc_id;
-	int event_n;
-	int event_index;
+	int event_n;							// 本次epoll事件数量
+	int event_index;						// 下一个未处理的epoll事件索引
 	struct socket_object_interface soi;
-	struct event ev[MAX_EVENT];
-	struct socket slot[MAX_SOCKET];
+	struct event ev[MAX_EVENT];				// epoll事件列表
+	struct socket slot[MAX_SOCKET];			// socket列表
 	char buffer[MAX_INFO];
 	uint8_t udpbuffer[MAX_UDP_PACKAGE];
 	fd_set rfds;
@@ -387,6 +387,9 @@ socket_server_create(uint64_t time) {
 		return NULL;
 	}
 	if (pipe(fd)) {
+		// pipe可用于多进程和多线程之间的通信
+		// 多进程：父进程和子进程之间通信
+		// 多线程：这里是用于 worker线程和socket线程之间通信
 		sp_release(efd);
 		skynet_error(NULL, "socket-server: create socket pair failed.");
 		return NULL;
