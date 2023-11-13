@@ -40,22 +40,22 @@
 #endif
 
 struct skynet_context {
-	void * instance;				// *隔离的环境
-	struct skynet_module * mod;		// 模块
-	void * cb_ud;					// 回调携带的环境
+	void * instance;				// *隔离的环境，C模块副本的引用
+	struct skynet_module * mod;		// 模块地址
+	void * cb_ud;					// 回调携带的环境，callback userdata
 	skynet_cb cb;					// *回调函数
-	struct message_queue *queue;	// *消息队列
-	ATOM_POINTER logfile;
-	uint64_t cpu_cost;	// in microsec
-	uint64_t cpu_start;	// in microsec
-	char result[32];
+	struct message_queue *queue;	// *服务消息队列
+	ATOM_POINTER logfile;			// 文件指针，是个原子指针
+	uint64_t cpu_cost;	// in microsec // 消耗的总cpu时间
+	uint64_t cpu_start;	// in microsec // 起始时间点
+	char result[32];	// 用来保存命令的执行结果
 	uint32_t handle;				// actor句柄
-	int session_id;
-	ATOM_INT ref;
-	int message_count;
-	bool init;
-	bool endless;
-	bool profile;
+	int session_id;		// 消息的 session id 分配器，不断累加
+	ATOM_INT ref;		// 引用着的数量
+	int message_count;	// 处理过的消息总数
+	bool init;			// 初始化完成标记
+	bool endless;		// 死循环标志
+	bool profile;		// 是否开启了 profile
 
 	CHECKCALLING_DECL
 };
@@ -123,17 +123,20 @@ drop_message(struct skynet_message *msg, void *ud) {
 
 struct skynet_context * 
 skynet_context_new(const char * name, const char *param) {
+	// 根据module的名字查询module具体的数据结构，即module的地址
 	struct skynet_module * mod = skynet_module_query(name);
 
 	if (mod == NULL)
 		return NULL;
 
+	// 创建module的实例， 返回module私有数据地址
 	void *inst = skynet_module_instance_create(mod);
 	if (inst == NULL)
 		return NULL;
 	struct skynet_context * ctx = skynet_malloc(sizeof(*ctx));
 	CHECKCALLING_INIT(ctx)
 
+	// skynet_context 初始化
 	ctx->mod = mod;
 	ctx->instance = inst;
 	ATOM_INIT(&ctx->ref , 2);
@@ -151,12 +154,16 @@ skynet_context_new(const char * name, const char *param) {
 	ctx->profile = G_NODE.profile;
 	// Should set to 0 first to avoid skynet_handle_retireall get an uninitialized handle
 	ctx->handle = 0;	
+	
+	// 注册服务的handle
 	ctx->handle = skynet_handle_register(ctx);
+	// 创建服务的消息队列
 	struct message_queue * queue = ctx->queue = skynet_mq_create(ctx->handle);
 	// init function maybe use ctx->handle, so it must init at last
 	context_inc();
 
 	CHECKCALLING_BEGIN(ctx)
+	// 调用 module 的 init 函数初始化之前创建好的 module 数据副本
 	int r = skynet_module_instance_init(mod, inst, ctx, param);
 	CHECKCALLING_END(ctx)
 	if (r == 0) {

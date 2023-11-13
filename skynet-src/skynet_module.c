@@ -21,6 +21,9 @@ struct modules {
 
 static struct modules * M = NULL;
 
+
+// 尝试打开动态库
+// 依次遍历 M 中的每个目录，查找目标名字的模块
 static void *
 _try_open(struct modules *m, const char * name) {
 	const char *l;
@@ -73,6 +76,8 @@ _query(const char * name) {
 	return NULL;
 }
 
+// 拿到模块中定义好的指定函数的地址
+// 并没有在乎有没有拿到，调用的时候会再判断
 static void *
 get_api(struct skynet_module *mod, const char *api_name) {
 	size_t name_size = strlen(mod->name);
@@ -89,6 +94,8 @@ get_api(struct skynet_module *mod, const char *api_name) {
 	return dlsym(mod->module, ptr);
 }
 
+// 读取动态库内的函数地址
+// 返回是否读取到了 init 函数
 static int
 open_sym(struct skynet_module *mod) {
 	mod->create = get_api(mod, "_create");
@@ -105,8 +112,9 @@ skynet_module_query(const char * name) {
 	if (result)
 		return result;
 
+	// 上锁
 	SPIN_LOCK(M)
-
+	// 因为可能就是刚刚交出锁的那个线程添加了这个模块，所以要再检查一次
 	result = _query(name); // double check
 
 	if (result == NULL && M->count < MAX_MODULE_TYPE) {

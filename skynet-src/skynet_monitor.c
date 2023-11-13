@@ -27,6 +27,8 @@ skynet_monitor_delete(struct skynet_monitor *sm) {
 	skynet_free(sm);
 }
 
+// 　　skynet_monitor_check 中的操作也很简单，就是检查 skynet_monitor 中的 vesion 和 check_version 是否一致。如果 version 和 check_version 不相等，则把 check_version 设为 version，如果相等，则说明从上次检查到这次检查也就是 5s 之内，worker 线程都在处理同一条消息。这时候就认为这个 worker 线程可能已经陷入了死循环中。把目标服务的 endless 属性设为 true，然后输出一条错误日志警告开发者。
+//　　通过阅读实现可以发现，monitor 线程只能起到非常微弱的辅助作用，那就是如果一条消息的执行时间超过 5s，就发出一次警告。 
 void 
 skynet_monitor_trigger(struct skynet_monitor *sm, uint32_t source, uint32_t destination) {
 	sm->source = source;

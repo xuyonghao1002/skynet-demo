@@ -45,6 +45,7 @@ skynet_handle_register(struct skynet_context *ctx) {
 				// 0 is reserved
 				handle = 1;
 			}
+			// 在C语言中，n & (m - 1)这个表达式通常用于对n取模m的一种快速方式。这个技巧要求m是2的幂，这样m-1的二进制表示中所有位都为1。因此，n & (m - 1)实际上相当于对n进行二进制模m的运算。
 			int hash = handle & (s->slot_size-1);
 			if (s->slot[hash] == NULL) {
 				s->slot[hash] = ctx;

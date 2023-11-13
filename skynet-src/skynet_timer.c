@@ -41,8 +41,11 @@ struct timer {
 	struct link_list t[4][TIME_LEVEL];
 	struct spinlock lock;
 	uint32_t time;
+	// 进程的开始时间
 	uint32_t starttime;
+	// 进程从到现在持续的时间
 	uint64_t current;
+	// 一个单调递增的时间，不受系统时间的影响
 	uint64_t current_point;
 };
 
@@ -229,6 +232,7 @@ systime(uint32_t *sec, uint32_t *cs) {
 	struct timespec ti;
 	clock_gettime(CLOCK_REALTIME, &ti);
 	*sec = (uint32_t)ti.tv_sec;
+	// 以 10ms 为单位的
 	*cs = (uint32_t)(ti.tv_nsec / 10000000);
 }
 
@@ -236,6 +240,7 @@ static uint64_t
 gettime() {
 	uint64_t t;
 	struct timespec ti;
+	// 获取一个单调递增的时间，不受系统时间的影响
 	clock_gettime(CLOCK_MONOTONIC, &ti);
 	t = (uint64_t)ti.tv_sec * 100;
 	t += ti.tv_nsec / 10000000;

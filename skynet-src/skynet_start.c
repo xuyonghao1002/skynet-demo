@@ -94,6 +94,7 @@ free_monitor(struct monitor *m) {
 	skynet_free(m);
 }
 
+// monitor 顾名思义就是监控，它监控的就是所有 worker 线程的工作状态，如果 worker 线程在处理一条消息的时候用时太久了，monitor 线程会打印出一条错误日志，告诉开发者一条从 A 服务到 B 服务的消息的处理逻辑中可能有死循环存在。
 static void *
 thread_monitor(void *p) {  // 检查过载服务
 	struct monitor * m = p;
