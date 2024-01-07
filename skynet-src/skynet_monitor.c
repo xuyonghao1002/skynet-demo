@@ -8,11 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// work 线程的 monitor 结构
 struct skynet_monitor {
-	ATOM_INT version;
-	int check_version;
-	uint32_t source;
-	uint32_t destination;
+	ATOM_INT version;  // 原子 version
+	int check_version;  // 上次检查时的 version
+	uint32_t source;  // 当前处理的消息的源 handle
+	uint32_t destination;  // 当前处理的消息的目标 handle
 };
 
 struct skynet_monitor * 

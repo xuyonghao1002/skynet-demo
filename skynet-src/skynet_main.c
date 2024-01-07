@@ -74,6 +74,8 @@ _init_env(lua_State *L) {
 	lua_pop(L,1);
 }
 
+// 这个函数的作用是设置对 SIGPIPE 信号的处理方式为忽略
+// 以避免在网络编程中由于管道写入问题导致进程异常终止
 int sigign() {
 	struct sigaction sa;
 	sa.sa_handler = SIG_IGN;
@@ -118,6 +120,7 @@ int
 main(int argc, char *argv[]) {
 	const char * config_file = NULL ;
 	if (argc > 1) {
+		// 拿到配置文件的路径
 		config_file = argv[1];
 	} else {
 		fprintf(stderr, "Need a config file. Please read skynet wiki : https://github.com/cloudwu/skynet/wiki/Config\n"
@@ -125,9 +128,13 @@ main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	// 初始化 GNODE 的数据
 	skynet_globalinit();
+
+	// 初始化环境变量
 	skynet_env_init();
 
+	// 忽略信号 SIGPIPE, 防止写数据时被意外终止进程
 	sigign();
 
 	struct skynet_config config;
@@ -137,6 +144,7 @@ main(int argc, char *argv[]) {
 	luaL_initcodecache();
 #endif
 
+	// 开一个 lua 虚拟机来加载配置用
 	struct lua_State *L = luaL_newstate();
 	luaL_openlibs(L);	// link lua lib
 
@@ -144,12 +152,14 @@ main(int argc, char *argv[]) {
 	assert(err == LUA_OK);
 	lua_pushstring(L, config_file);
 
+	// 使用上面的 lua 代码解析 config 文件
 	err = lua_pcall(L, 1, 1, 0);
 	if (err) {
 		fprintf(stderr,"%s\n",lua_tostring(L,-1));
 		lua_close(L);
 		return 1;
 	}
+	// 从 config 文件中读内容，写入到环境变量中
 	_init_env(L);
 
 	config.thread =  optint("thread",8);
@@ -161,9 +171,13 @@ main(int argc, char *argv[]) {
 	config.logservice = optstring("logservice", "logger");
 	config.profile = optboolean("profile", 1);
 
+	// 关闭 lua 虚拟机
 	lua_close(L);
 
+	// 通过 config 结构中的内容，开始正式启动
 	skynet_start(&config);
+
+	// 进程退出
 	skynet_globalexit();
 
 	return 0;

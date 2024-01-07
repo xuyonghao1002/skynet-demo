@@ -17,16 +17,16 @@ struct handle_name {
 };
 
 struct handle_storage {
-	struct rwlock lock;
+	struct rwlock lock;  // 读写锁，因为读取的频率远远高于写入
 
-	uint32_t harbor;
-	uint32_t handle_index;
-	int slot_size;
-	struct skynet_context ** slot;
+	uint32_t harbor;  // 本节点的 harbor id
+	uint32_t handle_index;  // 当前的索引值，会累加
+	int slot_size;  // slot 的长度
+	struct skynet_context ** slot;  // 全部 ctx
 	
-	int name_cap;
-	int name_count;
-	struct handle_name *name;
+	int name_cap;  // 名字列表的容量
+	int name_count;  // 名字列表的总数
+	struct handle_name *name;  // 保存全部的名字
 };
 
 static struct handle_storage *H = NULL;
@@ -136,8 +136,9 @@ skynet_handle_retireall() {
 	}
 }
 
+// 通过handle查找服务的上下文
 struct skynet_context * 
-skynet_handle_grab(uint32_t handle) {  // 通过handle查找服务的上下文
+skynet_handle_grab(uint32_t handle) {
 	struct handle_storage *s = H;
 	struct skynet_context * result = NULL;
 

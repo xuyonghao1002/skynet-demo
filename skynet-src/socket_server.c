@@ -377,6 +377,7 @@ clear_wb_list(struct wb_list *list) {
 	list->tail = NULL;
 }
 
+// 创建 socket_server 对象
 struct socket_server * 
 socket_server_create(uint64_t time) {
 	int i;

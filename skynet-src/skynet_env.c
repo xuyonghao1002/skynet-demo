@@ -47,6 +47,8 @@ skynet_setenv(const char *key, const char *value) {
 void
 skynet_env_init() {
 	E = skynet_malloc(sizeof(*E));
+	// 初始化自旋锁
 	SPIN_INIT(E)
+	// 创建 Lua 状态机，这个状态机用于执行 Lua 脚本
 	E->L = luaL_newstate();
 }

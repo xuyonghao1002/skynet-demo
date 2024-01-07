@@ -22,11 +22,11 @@
 // 全局唯一的实例
 struct monitor {
 	int count;  // 工作线程的数量
-	struct skynet_monitor ** m;  // struct skynet_monitor * 的数组，数组大小为工作线程的数量
-	pthread_cond_t cond;
-	pthread_mutex_t mutex;
+	struct skynet_monitor ** m;  // 全部 worker 线程的 monitor 指针
+	pthread_cond_t cond;  // 给 worker 线程挂起用的全局条件
+	pthread_mutex_t mutex;  // 互斥锁
 	int sleep;  // 休眠的工作线程数量
-	int quit;
+	int quit;  // 退出标记
 };
 
 
@@ -99,13 +99,18 @@ static void *
 thread_monitor(void *p) {  // 检查过载服务
 	struct monitor * m = p;
 	int i;
+	// 拿到 worker 线程的数量
 	int n = m->count;
+	// 设置线程属性
 	skynet_initthread(THREAD_MONITOR);
 	for (;;) {
 		CHECK_ABORT
+		// 遍历检查所有工作线程的 monitor
 		for (i=0;i<n;i++) {
 			skynet_monitor_check(m->m[i]);
 		}
+		// 睡眠 5s
+        // 使用循环分开调用是为了更快的触发 abort
 		for (i=0;i<5;i++) {
 			CHECK_ABORT
 			sleep(1);
@@ -166,15 +171,20 @@ thread_worker(void *p) {
 	struct message_queue * q = NULL;
 	while (!m->quit) {
 		q = skynet_context_message_dispatch(sm, q, weight);
+		// 如果 q 是 NULL 的话，说明没有 pop 到要处理的消息队列，要把它投入到睡眠中去
 		if (q == NULL) {
-			// 全局消息队列中没有消息时，工作线程休眠
+			// 获取全局 monitor 的锁
 			if (pthread_mutex_lock(&m->mutex) == 0) {
+				// 累加当前睡眠的线程数量
 				++ m->sleep;
 				// "spurious wakeup" is harmless,
 				// because skynet_context_message_dispatch() can be call at any time.
 				if (!m->quit)
+					// 等待在条件上，释放 mutex, 等待 socket 线程或是 timer 线程唤醒
 					pthread_cond_wait(&m->cond, &m->mutex);
+				// 被唤醒后减少睡眠线程数
 				-- m->sleep;
+				// 释放锁
 				if (pthread_mutex_unlock(&m->mutex)) {
 					fprintf(stderr, "unlock mutex error");
 					exit(1);
@@ -274,24 +284,35 @@ skynet_start(struct skynet_config * config) {
 			exit(1);
 		}
 	}
+
+	// 初始化节点数量
 	skynet_harbor_init(config->harbor);
+	// 初始化 handle 存储器
 	skynet_handle_init(config->harbor);
+	// 初始化全局消息队列
 	skynet_mq_init();
+	// 初始化 C 模块管理器，设置查找路径
 	skynet_module_init(config->module_path);
+	// 初始化全局时间，时间轮算法在此实现
 	skynet_timer_init();
+	// 初始化 socket 管理器
 	skynet_socket_init();
+	// 标记是否开了性能测试
 	skynet_profile_enable(config->profile);
 
+	// 创建 logger C服务
 	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger);
 	if (ctx == NULL) {
 		fprintf(stderr, "Can't launch %s service\n", config->logservice);
 		exit(1);
 	}
-
+	// 注册 logger 服务的名字
 	skynet_handle_namehandle(skynet_context_handle(ctx), "logger");
 
+	// 启动，执行 config 文件中的 bootstrap 命令
 	bootstrap(ctx, config->bootstrap);
 
+	// 启动全部线程
 	start(config->thread);
 
 	// harbor_exit may call socket send, so it should exit before socket_free

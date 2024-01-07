@@ -40,7 +40,7 @@
 #endif
 
 struct skynet_context {
-	void * instance;				// *隔离的环境，C模块副本的引用
+	void * instance;				// *隔离的环境，C模块副本的引用，c模块中的 create 函数中的结构体的实例
 	struct skynet_module * mod;		// 模块地址
 	void * cb_ud;					// 回调携带的环境，callback userdata
 	skynet_cb cb;					// *回调函数
@@ -309,9 +309,11 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 			return NULL;
 	}
 
+	// 拿到消息队列所属服务的 handle
 	uint32_t handle = skynet_mq_handle(q);
-
-	struct skynet_context * ctx = skynet_handle_grab(handle);  // 查找服务
+	// 通过 handle 查找服务
+	struct skynet_context * ctx = skynet_handle_grab(handle);
+	// 如果拿不到对应的服务，说明这消息队列被废弃了
 	if (ctx == NULL) {
 		struct drop_t d = { handle };
 		skynet_mq_release(q, drop_message, &d);
@@ -325,10 +327,13 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 	// weight > 0时，取出 n>>=weight 的消息
 	for (i=0;i<n;i++) {
 		if (skynet_mq_pop(q,&msg)) {
+			// 拿不到消息，直接返回
 			skynet_context_release(ctx);
 			return skynet_globalmq_pop();
 		} else if (i==0 && weight >= 0) {
-			n = skynet_mq_length(q);  // 此时q是某个具体服务的消息队列
+			// 消息队列的总长度
+			n = skynet_mq_length(q);
+			// 按线程工作权重拿本次要处理的消息数量
 			n >>= weight;
 		}
 		int overload = skynet_mq_overload(q);
@@ -336,20 +341,25 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 			skynet_error(ctx, "May overload, message queue length = %d", overload);
 		}
 
+		// 更新 monitor 的记录和计数
 		skynet_monitor_trigger(sm, msg.source , handle);
 
 		if (ctx->cb == NULL) {
 			skynet_free(msg.data);
 		} else {
+			// 处理消息
 			dispatch_message(ctx, &msg);
 		}
 
+		// 更新 monitor 的记录和计数
 		skynet_monitor_trigger(sm, 0,0);
 	}
 
 	assert(q == ctx->queue);
 	struct message_queue *nq = skynet_globalmq_pop();
 	if (nq) {
+		// 如果全局队列是非空的，会将 q push 回全局队列的最后，这是必要的，因为 q 的消息并不一定被处理完了
+		// 当全局队列已经空了的时候，会继续返回 q，下一次还会处理 q，直到 q 中没有了消息
 		// If global mq is not empty , push q back, and return next queue (nq)
 		// Else (global mq is empty or block, don't push q back, and return q again (for next dispatch)
 		skynet_globalmq_push(q);
@@ -814,16 +824,25 @@ skynet_context_send(struct skynet_context * ctx, void * msg, size_t sz, uint32_t
 	skynet_mq_push(ctx->queue, &smsg);
 }
 
+// 全局初始化函数，主要用于初始化 skynet 运行时的一些全局变量和线程相关的内容
 void 
 skynet_globalinit(void) {
+	// 使用原子操作初始化全局计数器 total
 	ATOM_INIT(&G_NODE.total , 0);
+	
+	// 初始化监控退出标志
 	G_NODE.monitor_exit = 0;
+	
+	// 设置初始化标志
 	G_NODE.init = 1;
+
+	// 创建线程特定数据的键 key
 	if (pthread_key_create(&G_NODE.handle_key, NULL)) {
 		fprintf(stderr, "pthread_key_create failed");
 		exit(1);
 	}
 	// set mainthread's key
+	// 在主线程上设置线程特定数据的键
 	skynet_initthread(THREAD_MAIN);
 }
 
