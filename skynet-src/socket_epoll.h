@@ -58,6 +58,8 @@ sp_wait(int efd, struct event *e, int max) {
 	int n = epoll_wait(efd , ev, max, -1);
 	int i;
 	for (i=0;i<n;i++) {
+		// data.prt 是 socket 结构
+		// 在 sp_add 的时候赋值
 		e[i].s = ev[i].data.ptr;
 		unsigned flag = ev[i].events;
 		e[i].write = (flag & EPOLLOUT) != 0;

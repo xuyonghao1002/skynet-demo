@@ -89,6 +89,7 @@ function gateserver.start(handler)
 
 	MSG.more = dispatch_queue
 
+	-- 客户端有连接过来
 	function MSG.open(fd, msg)
 		client_number = client_number + 1
 		if client_number >= maxclient then

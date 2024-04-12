@@ -67,15 +67,19 @@ wakeup(struct monitor *m, int busy) {
 static void *
 thread_socket(void *p) {
 	struct monitor * m = p;
+	// 设置线程类型
 	skynet_initthread(THREAD_SOCKET);
 	for (;;) {
 		int r = skynet_socket_poll();
 		if (r==0)
+			// 退出网络轮询
 			break;
 		if (r<0) {
 			CHECK_ABORT
+			// 一般是还有消息没处理完，直接继续循环
 			continue;
 		}
+		// 要所有 work 线程全都睡眠，才会唤醒一个 work 线程
 		wakeup(m,0);
 	}
 	return NULL;

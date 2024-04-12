@@ -41,6 +41,7 @@ forward_message(int type, bool padding, struct socket_message * result) {
 	size_t sz = sizeof(*sm);
 	if (padding) {
 		if (result->data) {
+			// 消息长度限制不能超过 128
 			size_t msg_sz = strlen(result->data);
 			if (msg_sz > 128) {
 				msg_sz = 128;
@@ -56,6 +57,7 @@ forward_message(int type, bool padding, struct socket_message * result) {
 	sm->ud = result->ud;
 	if (padding) {
 		sm->buffer = NULL;
+		// 把 data 的数据追到 sm 的最后面
 		memcpy(sm+1, result->data, sz - sizeof(*sm));
 	} else {
 		sm->buffer = result->data;
@@ -80,7 +82,9 @@ skynet_socket_poll() {
 	struct socket_server *ss = SOCKET_SERVER;
 	assert(ss);
 	struct socket_message result;
+	// 还有剩余事件没处理完的标记
 	int more = 1;
+	// 处理 epoll 事件
 	int type = socket_server_poll(ss, &result, &more);
 	switch (type) {
 	case SOCKET_EXIT:

@@ -20,20 +20,21 @@
 
 // 服务的消息队列
 struct message_queue {
-	struct spinlock lock;
+	struct spinlock lock;  // 自旋锁
 	uint32_t handle;  // 保存服务的 handle，可通过 handle 查询到服务地址
-	int cap;
-	int head;
-	int tail;
-	int release;
-	int in_global;
-	int overload;
-	int overload_threshold;
-	struct skynet_message *queue;
-	struct message_queue *next;
+	int cap;  // 容量，动态长度，可以扩容
+	int head;  // 消息的头指针
+	int tail;  // 消息的尾指针
+	int release;  // 标记是否已经被释放
+	int in_global;  // 标记是否在全局队列中
+	int overload;  // 现在的负载
+	int overload_threshold;  // 超载警告的阈值
+	struct skynet_message *queue;  // 消息队列数组
+	struct message_queue *next;  // 下一个消息队列，链表结构
 };
 
-struct global_queue {  // 全局消息队列
+// 全局消息队列
+struct global_queue {
 	struct message_queue *head;
 	struct message_queue *tail;
 	struct spinlock lock;

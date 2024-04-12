@@ -87,47 +87,47 @@ struct socket_stat {
 };
 
 struct socket {
-	uintptr_t opaque;				// actor地址
-	struct wb_list high;
-	struct wb_list low;
-	int64_t wb_size;
-	struct socket_stat stat;
-	ATOM_ULONG sending;
+	uintptr_t opaque;				// 关联的服务 handle
+	struct wb_list high;			// 高优先级队列
+	struct wb_list low;				// 低优先级队列
+	int64_t wb_size;				// 等待写入的字节长度
+	struct socket_stat stat;		// 连接状态
+	ATOM_ULONG sending;				// 是否正在发送数据，是一个引用计数，会累加
 	int fd;							// socket文件描述符
 	int id;							// slot列表索引
-	ATOM_INT type;
-	uint8_t protocol;
-	bool reading;
-	bool writing;
-	bool closing;
-	ATOM_INT udpconnecting;
-	int64_t warn_size;
+	ATOM_INT type;					// 当前连接状态
+	uint8_t protocol;				// 连接协议
+	bool reading;					// fd 的 read 监听标记
+	bool writing;					// fd 的 write 监听标记
+	bool closing;					// fd 的 close 标记
+	ATOM_INT udpconnecting;			// udp 正在连接
+	int64_t warn_size;				// 报警阈值
 	union {
-		int size;
-		uint8_t udp_address[UDP_ADDRESS_SIZE];
+		int size;					// tcp 连接用 size 表示每次读取的字节数
+		uint8_t udp_address[UDP_ADDRESS_SIZE];  // udp 用 udp_address 表示地址
 	} p;
-	struct spinlock dw_lock;
-	int dw_offset;
-	const void * dw_buffer;
-	size_t dw_size;
+	struct spinlock dw_lock;		// 自旋锁
+	int dw_offset;					// 已经写入的大小
+	const void * dw_buffer;			// dw 待发送的数据缓存，优先级很高
+	size_t dw_size;					// dw 写出的总大小
 };
 
 struct socket_server {
-	volatile uint64_t time;
+	volatile uint64_t time;					// 时间，由 timer 线程更新，socket 线程直接读这个值
 	int reserve_fd;							// for EMFILE
 	int recvctrl_fd;						// 接收管道文件描述符
 	int sendctrl_fd;						// 发送管道文件描述符
-	int checkctrl;							// 其他线程是否通过管道向 socket 线程发送消息
+	int checkctrl;							// 用来标记是否要检查控制台命令的标志
 	poll_fd event_fd;						// epoll 实例id
-	ATOM_INT alloc_id;
+	ATOM_INT alloc_id;						// 已分配的id，不断累加
 	int event_n;							// 本次epoll事件数量
 	int event_index;						// 下一个未处理的epoll事件索引
-	struct socket_object_interface soi;
+	struct socket_object_interface soi;		// userobject 接口
 	struct event ev[MAX_EVENT];				// epoll事件列表
 	struct socket slot[MAX_SOCKET];			// socket列表
-	char buffer[MAX_INFO];
-	uint8_t udpbuffer[MAX_UDP_PACKAGE];
-	fd_set rfds;
+	char buffer[MAX_INFO];					// 临时缓冲区
+	uint8_t udpbuffer[MAX_UDP_PACKAGE];		// udp 数据缓冲区
+	fd_set rfds;							// 要监听的读描述符集合，用于命令的 select
 };
 
 struct request_open {
@@ -343,6 +343,7 @@ socket_keepalive(int fd) {
 	setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive , sizeof(keepalive));  
 }
 
+// 为 socket 分配唯一 id
 static int
 reserve_id(struct socket_server *ss) {
 	int i;
@@ -381,12 +382,18 @@ clear_wb_list(struct wb_list *list) {
 struct socket_server * 
 socket_server_create(uint64_t time) {
 	int i;
+
+	// 创建用于命令的管道套接字
 	int fd[2];
+
+	// 创建 epoll 套接字
 	poll_fd efd = sp_create();
 	if (sp_invalid(efd)) {
 		skynet_error(NULL, "socket-server: create event pool failed.");
 		return NULL;
 	}
+
+	// 创建管道，这里并未将管道的套接字设为非阻塞
 	if (pipe(fd)) {
 		// pipe可用于多进程和多线程之间的通信
 		// 多进程：父进程和子进程之间通信
@@ -395,6 +402,8 @@ socket_server_create(uint64_t time) {
 		skynet_error(NULL, "socket-server: create socket pair failed.");
 		return NULL;
 	}
+
+	// 把 fd[0](读端) 加入到 epoll 的管理中
 	if (sp_add(efd, fd[0], NULL)) {
 		// add recvctrl_fd to event poll
 		skynet_error(NULL, "socket-server: can't add server fd to event pool.");
@@ -404,6 +413,7 @@ socket_server_create(uint64_t time) {
 		return NULL;
 	}
 
+	// 创建结构体并进行一些初始化
 	struct socket_server *ss = MALLOC(sizeof(*ss));
 	ss->time = time;
 	ss->event_fd = efd;
@@ -412,17 +422,23 @@ socket_server_create(uint64_t time) {
 	ss->checkctrl = 1;
 	ss->reserve_fd = dup(1);	// reserve an extra fd for EMFILE
 
+	// 填充 socket 管理器的套接字插槽
 	for (i=0;i<MAX_SOCKET;i++) {
 		struct socket *s = &ss->slot[i];
+		// 初始化连接状态
 		ATOM_INIT(&s->type, SOCKET_TYPE_INVALID);
+		// 清空高优先级缓冲区
 		clear_wb_list(&s->high);
+		// 清空低优先级缓冲区
 		clear_wb_list(&s->low);
+		// 初始化锁
 		spinlock_init(&s->dw_lock);
 	}
 	ATOM_INIT(&ss->alloc_id , 0);
 	ss->event_n = 0;
 	ss->event_index = 0;
 	memset(&ss->soi, 0, sizeof(ss->soi));
+	// 清空监听描述符集
 	FD_ZERO(&ss->rfds);
 	assert(ss->recvctrl_fd < FD_SETSIZE);
 
@@ -606,6 +622,7 @@ stat_write(struct socket_server *ss, struct socket *s, int n) {
 }
 
 // return -1 when connecting
+// connect
 static int
 open_socket(struct socket_server *ss, struct request_open * request, struct socket_message *result) {
 	int id = request->id;
@@ -1675,8 +1692,10 @@ clear_closed_event(struct socket_server *ss, struct socket_message * result, int
 int 
 socket_server_poll(struct socket_server *ss, struct socket_message * result, int * more) {
 	for (;;) {
+		// 检测管道里的消息，即 worker 线程向 socket 线程发送的消息
 		if (ss->checkctrl) {
 			if (has_cmd(ss)) {
+				// 主要用来 work 线程 告知 socket 进行相关操作
 				int type = ctrl_cmd(ss, result);
 				if (type != -1) {
 					clear_closed_event(ss, result, type);

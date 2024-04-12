@@ -22,15 +22,15 @@
 // #define DEBUG_LOG
 
 #define MEMORY_WARNING_REPORT (1024 * 1024 * 32)
-
+// snlua 模块的结构体
 struct snlua {
 	lua_State * L; // lua 虚拟机
-	struct skynet_context * ctx;
-	size_t mem;
-	size_t mem_report;
-	size_t mem_limit;
-	lua_State * activeL;
-	ATOM_INT trap;
+	struct skynet_context * ctx;  // 关联的 skynet context
+	size_t mem;  // 已经使用的内存
+	size_t mem_report;  // 触发内存警告的阈值
+	size_t mem_limit;  // 内存的上限设置
+	lua_State * activeL;  // 目前正在运行的状态机
+	ATOM_INT trap;  // 打断状态
 };
 
 // LUA_CACHELIB may defined in patched lua for shared proto

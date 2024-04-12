@@ -22,13 +22,13 @@ typedef void (*timer_execute_func)(void *ud,void *arg);
 #define TIME_LEVEL_MASK (TIME_LEVEL-1)
 
 struct timer_event {
-	uint32_t handle;
-	int session;
+	uint32_t handle;  // 服务地址handle
+	int session;  // 协程
 };
 
 struct timer_node {
 	struct timer_node *next;
-	uint32_t expire;
+	uint32_t expire;  // 超时时间
 };
 
 struct link_list {
@@ -37,10 +37,10 @@ struct link_list {
 };
 
 struct timer {
-	struct link_list near[TIME_NEAR];
-	struct link_list t[4][TIME_LEVEL];
+	struct link_list near[TIME_NEAR];  // 临近要超时的事件 2^8 256
+	struct link_list t[4][TIME_LEVEL]; // 层次化的过期事件 2^6 * 4  2^32*10ms的超时事件
 	struct spinlock lock;
-	uint32_t time;
+	uint32_t time;  // 时间步长 10ms 加1
 	// 进程的开始时间
 	uint32_t starttime;
 	// 进程从到现在持续的时间
@@ -51,6 +51,7 @@ struct timer {
 
 static struct timer * TI = NULL;
 
+// 返回第一个节点，并清空链表
 static inline struct timer_node *
 link_clear(struct link_list *list) {
 	struct timer_node * ret = list->head.next;
@@ -67,6 +68,7 @@ link(struct link_list *list,struct timer_node *node) {
 	node->next=0;
 }
 
+// 增加一个定时任务节点
 static void
 add_node(struct timer *T,struct timer_node *node) {
 	uint32_t time=node->expire;
@@ -88,6 +90,7 @@ add_node(struct timer *T,struct timer_node *node) {
 	}
 }
 
+// 增加一个定时任务，将 time_event 结构体加在 time_node 内存后面
 static void
 timer_add(struct timer *T,void *arg,size_t sz,int time) {
 	struct timer_node *node = (struct timer_node *)skynet_malloc(sizeof(*node)+sz);
@@ -101,6 +104,7 @@ timer_add(struct timer *T,void *arg,size_t sz,int time) {
 	SPIN_UNLOCK(T);
 }
 
+// 移除层次节点数组中的一个链表，将这个链表里的节点从新添加到新的时间轮中
 static void
 move_list(struct timer *T, int level, int idx) {
 	struct timer_node *current = link_clear(&T->t[level][idx]);
@@ -111,10 +115,11 @@ move_list(struct timer *T, int level, int idx) {
 	}
 }
 
+// 调整时间轮
 static void
 timer_shift(struct timer *T) {
 	int mask = TIME_NEAR;
-	uint32_t ct = ++T->time;
+	uint32_t ct = ++T->time;  // 每10ms加一
 	if (ct == 0) {
 		move_list(T, 3, 0);
 	} else {
@@ -134,6 +139,7 @@ timer_shift(struct timer *T) {
 	}
 }
 
+// 执行节点链表的所有节点，向对应服务发送 PTYPE_RESPONSE 消息
 static inline void
 dispatch_list(struct timer_node *current) {
 	do {
@@ -152,6 +158,7 @@ dispatch_list(struct timer_node *current) {
 	} while (current);
 }
 
+// 时间轮中某个时间点的链表里的节点开始执行
 static inline void
 timer_execute(struct timer *T) {
 	int idx = T->time & TIME_NEAR_MASK;
@@ -165,6 +172,7 @@ timer_execute(struct timer *T) {
 	}
 }
 
+// 定时器更新函数，每10ms执行一次
 static void 
 timer_update(struct timer *T) {
 	SPIN_LOCK(T);
@@ -180,6 +188,7 @@ timer_update(struct timer *T) {
 	SPIN_UNLOCK(T);
 }
 
+// 创建 timer 结构体
 static struct timer *
 timer_create_timer() {
 	struct timer *r=(struct timer *)skynet_malloc(sizeof(struct timer));
@@ -204,6 +213,7 @@ timer_create_timer() {
 	return r;
 }
 
+// 定时接口
 int
 skynet_timeout(uint32_t handle, int time, int session) {
 	if (time <= 0) {
@@ -247,6 +257,7 @@ gettime() {
 	return t;
 }
 
+// 更新系统事件， 每2.5毫秒执行一次
 void
 skynet_updatetime(void) {
 	uint64_t cp = gettime();

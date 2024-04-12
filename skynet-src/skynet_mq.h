@@ -5,10 +5,10 @@
 #include <stdint.h>
 
 struct skynet_message {
-	uint32_t source;
-	int session;
-	void * data;
-	size_t sz;
+	uint32_t source;  // 消息源地址
+	int session;  // 消息的 session id
+	void * data;  // 数据
+	size_t sz;  // 消息的类型和长度，高 8bit 为类型， 其余为长度
 };
 
 // type is encoding in skynet_message.sz high 8bit
